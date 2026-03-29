@@ -9,6 +9,7 @@ from ingest.rss_fetcher import (
     _get_cutoff_time,
     _parse_entry_date,
     _is_within_window,
+    _dedupe_by_url,
 )
 
 
@@ -85,3 +86,29 @@ class TestIsWithinWindow:
         cutoff = datetime(2026, 3, 28, 0, 0, 0, tzinfo=timezone.utc)
         entry = {"title": "No date"}
         assert _is_within_window(entry, cutoff) is False
+
+
+class TestDedupeByUrl:
+    def test_removes_duplicate_urls(self):
+        articles = [
+            {"link": "https://example.com/1", "title": "First"},
+            {"link": "https://example.com/2", "title": "Second"},
+            {"link": "https://example.com/1", "title": "First (dupe)"},
+        ]
+        result = _dedupe_by_url(articles)
+        assert len(result) == 2
+        links = [a["link"] for a in result]
+        assert "https://example.com/1" in links
+        assert "https://example.com/2" in links
+
+    def test_keeps_first_occurrence(self):
+        articles = [
+            {"link": "https://example.com/1", "title": "First"},
+            {"link": "https://example.com/1", "title": "Duplicate"},
+        ]
+        result = _dedupe_by_url(articles)
+        assert len(result) == 1
+        assert result[0]["title"] == "First"
+
+    def test_handles_empty_list(self):
+        assert _dedupe_by_url([]) == []

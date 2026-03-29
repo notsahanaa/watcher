@@ -53,6 +53,18 @@ def _is_within_window(entry: dict, cutoff_time: datetime) -> bool:
     return entry_date >= cutoff_time
 
 
+def _dedupe_by_url(articles: list[dict]) -> list[dict]:
+    """Remove duplicate articles by URL, keeping first occurrence."""
+    seen_urls = set()
+    unique_articles = []
+    for article in articles:
+        url = article.get("link")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            unique_articles.append(article)
+    return unique_articles
+
+
 def fetch_feeds():
     """Fetch articles from configured RSS feeds."""
     pass

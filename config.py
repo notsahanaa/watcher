@@ -6,16 +6,19 @@ Adjust LOOKBACK_HOURS for testing (default: 24 hours).
 """
 
 # Time settings
-LOOKBACK_HOURS = 24  # How far back to fetch articles
+LOOKBACK_HOURS = 360  # 15 days for testing
 
 # RSS feeds organized by category
 # Add your feeds here - the category names will appear in the digest
 FEEDS = {
     "AI Tools": [
-        # Example: "https://openai.com/blog/rss.xml",
+        "https://every.to/context-window/feed",
+        "https://every.to/source-code/feed",
+        "https://every.to/also-true-for-humans/feed",
+        "https://every.to/thesis/feed"
     ],
     "Tech News": [
-        # Example: "https://techcrunch.com/feed/",
+        # "https://techcrunch.com/feed/",
     ],
 }
 

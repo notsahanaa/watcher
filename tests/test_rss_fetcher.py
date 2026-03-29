@@ -4,7 +4,12 @@ import time
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from ingest.rss_fetcher import _extract_source, _get_cutoff_time, _parse_entry_date
+from ingest.rss_fetcher import (
+    _extract_source,
+    _get_cutoff_time,
+    _parse_entry_date,
+    _is_within_window,
+)
 
 
 class TestExtractSource:
@@ -63,3 +68,20 @@ class TestParseEntryDate:
         entry = {"published_parsed": None}
         result = _parse_entry_date(entry)
         assert result is None
+
+
+class TestIsWithinWindow:
+    def test_returns_true_for_recent_entry(self):
+        cutoff = datetime(2026, 3, 28, 0, 0, 0, tzinfo=timezone.utc)
+        entry = {"published_parsed": time.struct_time((2026, 3, 28, 12, 0, 0, 0, 0, 0))}
+        assert _is_within_window(entry, cutoff) is True
+
+    def test_returns_false_for_old_entry(self):
+        cutoff = datetime(2026, 3, 28, 0, 0, 0, tzinfo=timezone.utc)
+        entry = {"published_parsed": time.struct_time((2026, 3, 27, 12, 0, 0, 0, 0, 0))}
+        assert _is_within_window(entry, cutoff) is False
+
+    def test_returns_false_for_entry_without_date(self):
+        cutoff = datetime(2026, 3, 28, 0, 0, 0, tzinfo=timezone.utc)
+        entry = {"title": "No date"}
+        assert _is_within_window(entry, cutoff) is False

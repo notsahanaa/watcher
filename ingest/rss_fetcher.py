@@ -45,6 +45,14 @@ def _parse_entry_date(entry: dict) -> Optional[datetime]:
     return None
 
 
+def _is_within_window(entry: dict, cutoff_time: datetime) -> bool:
+    """Check if entry was published after cutoff time."""
+    entry_date = _parse_entry_date(entry)
+    if entry_date is None:
+        return False
+    return entry_date >= cutoff_time
+
+
 def fetch_feeds():
     """Fetch articles from configured RSS feeds."""
     pass

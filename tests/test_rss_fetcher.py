@@ -11,6 +11,7 @@ from ingest.rss_fetcher import (
     _is_within_window,
     _dedupe_by_url,
     _fetch_single_feed,
+    fetch_feeds,
 )
 
 
@@ -155,3 +156,71 @@ class TestFetchSingleFeed:
         assert articles == []
         assert error is not None
         assert "broken.com" in error
+
+
+class TestFetchFeeds:
+    @patch("ingest.rss_fetcher.config")
+    @patch("ingest.rss_fetcher._fetch_single_feed")
+    def test_fetches_all_feeds_from_config(self, mock_fetch, mock_config):
+        mock_config.FEEDS = {
+            "AI": ["https://ai.com/feed"],
+            "Tech": ["https://tech.com/feed"],
+        }
+        mock_fetch.side_effect = [
+            ([{"title": "AI Article", "link": "https://ai.com/1"}], None),
+            ([{"title": "Tech Article", "link": "https://tech.com/1"}], None),
+        ]
+
+        articles, summary = fetch_feeds()
+
+        assert len(articles) == 2
+        assert summary["total_feeds"] == 2
+        assert summary["successful"] == 2
+        assert summary["failed"] == 0
+        assert summary["articles_found"] == 2
+
+    @patch("ingest.rss_fetcher.config")
+    @patch("ingest.rss_fetcher._fetch_single_feed")
+    def test_handles_failed_feeds(self, mock_fetch, mock_config):
+        mock_config.FEEDS = {
+            "AI": ["https://ai.com/feed", "https://broken.com/feed"],
+        }
+        mock_fetch.side_effect = [
+            ([{"title": "AI Article", "link": "https://ai.com/1"}], None),
+            ([], "Network error"),
+        ]
+
+        articles, summary = fetch_feeds()
+
+        assert len(articles) == 1
+        assert summary["total_feeds"] == 2
+        assert summary["successful"] == 1
+        assert summary["failed"] == 1
+        assert "https://broken.com/feed" in summary["failed_feeds"]
+
+    @patch("ingest.rss_fetcher.config")
+    def test_handles_empty_config(self, mock_config):
+        mock_config.FEEDS = {}
+
+        articles, summary = fetch_feeds()
+
+        assert articles == []
+        assert summary["total_feeds"] == 0
+
+    @patch("ingest.rss_fetcher.config")
+    @patch("ingest.rss_fetcher._fetch_single_feed")
+    def test_dedupes_across_feeds(self, mock_fetch, mock_config):
+        mock_config.FEEDS = {
+            "AI": ["https://ai.com/feed"],
+            "Tech": ["https://tech.com/feed"],
+        }
+        # Same article URL appears in both feeds
+        mock_fetch.side_effect = [
+            ([{"title": "Shared Article", "link": "https://shared.com/1"}], None),
+            ([{"title": "Shared Article Copy", "link": "https://shared.com/1"}], None),
+        ]
+
+        articles, summary = fetch_feeds()
+
+        assert len(articles) == 1  # Deduped
+        assert summary["articles_found"] == 1

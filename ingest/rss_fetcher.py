@@ -116,6 +116,62 @@ def _fetch_single_feed(feed_url: str, category: str) -> tuple[list[dict], Option
         return [], error_msg
 
 
-def fetch_feeds():
-    """Fetch articles from configured RSS feeds."""
-    pass
+def fetch_feeds() -> tuple[list[dict], dict]:
+    """
+    Fetch all RSS feeds from config and return articles.
+
+    Returns:
+        Tuple of:
+        - List of article dicts (deduped by URL)
+        - Summary dict with fetch statistics
+    """
+    feeds_config = getattr(config, "FEEDS", {})
+
+    if not feeds_config:
+        logger.warning("No feeds configured in config.FEEDS")
+        return [], {
+            "total_feeds": 0,
+            "successful": 0,
+            "failed": 0,
+            "failed_feeds": [],
+            "articles_found": 0,
+        }
+
+    all_articles = []
+    failed_feeds = []
+    total_feeds = 0
+
+    for category, urls in feeds_config.items():
+        if not urls:
+            logger.debug(f"Skipping empty category: {category}")
+            continue
+
+        for url in urls:
+            total_feeds += 1
+            articles, error = _fetch_single_feed(url, category)
+
+            if error:
+                failed_feeds.append(url)
+            else:
+                all_articles.extend(articles)
+
+    # Dedupe by URL
+    unique_articles = _dedupe_by_url(all_articles)
+
+    summary = {
+        "total_feeds": total_feeds,
+        "successful": total_feeds - len(failed_feeds),
+        "failed": len(failed_feeds),
+        "failed_feeds": failed_feeds,
+        "articles_found": len(unique_articles),
+    }
+
+    logger.info(
+        f"Fetched {summary['articles_found']} articles from "
+        f"{summary['successful']}/{summary['total_feeds']} feeds"
+    )
+
+    if failed_feeds:
+        logger.warning(f"Failed feeds: {failed_feeds}")
+
+    return unique_articles, summary

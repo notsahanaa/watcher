@@ -1,9 +1,10 @@
 """Tests for RSS fetcher module."""
 
+import time
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from ingest.rss_fetcher import _extract_source, _get_cutoff_time
+from ingest.rss_fetcher import _extract_source, _get_cutoff_time, _parse_entry_date
 
 
 class TestExtractSource:
@@ -35,3 +36,30 @@ class TestGetCutoffTime:
             # 48 hours before noon on March 29 = noon on March 27
             assert cutoff.day == 27
             assert cutoff.hour == 12
+
+
+class TestParseEntryDate:
+    def test_parses_published_parsed(self):
+        entry = {"published_parsed": time.struct_time((2026, 3, 28, 14, 30, 0, 0, 0, 0))}
+        result = _parse_entry_date(entry)
+        assert result is not None
+        assert result.year == 2026
+        assert result.month == 3
+        assert result.day == 28
+        assert result.tzinfo == timezone.utc
+
+    def test_falls_back_to_updated_parsed(self):
+        entry = {"updated_parsed": time.struct_time((2026, 3, 27, 10, 0, 0, 0, 0, 0))}
+        result = _parse_entry_date(entry)
+        assert result is not None
+        assert result.day == 27
+
+    def test_returns_none_if_no_date(self):
+        entry = {"title": "No date here"}
+        result = _parse_entry_date(entry)
+        assert result is None
+
+    def test_returns_none_for_invalid_date(self):
+        entry = {"published_parsed": None}
+        result = _parse_entry_date(entry)
+        assert result is None

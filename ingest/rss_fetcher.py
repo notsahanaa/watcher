@@ -6,7 +6,9 @@ dedupes by URL, and returns structured data for synthesis.
 """
 
 import logging
+from calendar import timegm
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 from urllib.parse import urlparse
 
 import config
@@ -23,6 +25,24 @@ def _get_cutoff_time() -> datetime:
     """Return UTC datetime for LOOKBACK_HOURS ago."""
     now = datetime.now(timezone.utc)
     return now - timedelta(hours=config.LOOKBACK_HOURS)
+
+
+def _parse_entry_date(entry: dict) -> Optional[datetime]:
+    """
+    Extract publication date from RSS entry.
+
+    Checks published_parsed first, then updated_parsed.
+    Returns None if no valid date found.
+    """
+    for field in ("published_parsed", "updated_parsed"):
+        parsed = entry.get(field)
+        if parsed:
+            try:
+                timestamp = timegm(parsed)
+                return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            except (TypeError, ValueError, OverflowError):
+                continue
+    return None
 
 
 def fetch_feeds():

@@ -10,6 +10,8 @@ from ingest.rss_fetcher import (
     _parse_entry_date,
     _is_within_window,
     _dedupe_by_url,
+    _truncate_to_words,
+    _fetch_article_content,
     _fetch_single_feed,
     fetch_feeds,
 )
@@ -24,6 +26,69 @@ class TestExtractSource:
 
     def test_handles_subdomain(self):
         assert _extract_source("https://blog.openai.com/feed") == "blog.openai.com"
+
+
+class TestTruncateToWords:
+    def test_returns_text_unchanged_if_under_limit(self):
+        text = "one two three"
+        assert _truncate_to_words(text, 10) == "one two three"
+
+    def test_truncates_text_over_limit(self):
+        text = "one two three four five six"
+        result = _truncate_to_words(text, 3)
+        assert result == "one two three..."
+
+    def test_handles_exact_limit(self):
+        text = "one two three"
+        assert _truncate_to_words(text, 3) == "one two three"
+
+    def test_handles_empty_string(self):
+        assert _truncate_to_words("", 10) == ""
+
+
+class TestFetchArticleContent:
+    @patch("ingest.rss_fetcher.trafilatura")
+    def test_returns_extracted_content(self, mock_trafilatura):
+        mock_trafilatura.fetch_url.return_value = "<html>content</html>"
+        mock_trafilatura.extract.return_value = "Article text here"
+
+        result = _fetch_article_content("https://example.com/article")
+
+        assert result == "Article text here"
+        mock_trafilatura.fetch_url.assert_called_once_with("https://example.com/article")
+
+    @patch("ingest.rss_fetcher.trafilatura")
+    def test_truncates_long_content(self, mock_trafilatura):
+        mock_trafilatura.fetch_url.return_value = "<html>content</html>"
+        # Create content with 600 words
+        long_content = " ".join(["word"] * 600)
+        mock_trafilatura.extract.return_value = long_content
+
+        result = _fetch_article_content("https://example.com/article")
+
+        # Should be truncated to 500 words + "..." appended
+        assert result.endswith("...")
+        # 500 words, last one has "..." appended
+        words = result.split()
+        assert len(words) == 500
+        assert words[-1] == "word..."
+
+    @patch("ingest.rss_fetcher.trafilatura")
+    def test_returns_none_on_download_failure(self, mock_trafilatura):
+        mock_trafilatura.fetch_url.return_value = None
+
+        result = _fetch_article_content("https://example.com/article")
+
+        assert result is None
+
+    @patch("ingest.rss_fetcher.trafilatura")
+    def test_returns_none_on_extract_failure(self, mock_trafilatura):
+        mock_trafilatura.fetch_url.return_value = "<html>content</html>"
+        mock_trafilatura.extract.return_value = None
+
+        result = _fetch_article_content("https://example.com/article")
+
+        assert result is None
 
 
 class TestGetCutoffTime:
@@ -117,10 +182,12 @@ class TestDedupeByUrl:
 
 
 class TestFetchSingleFeed:
+    @patch("ingest.rss_fetcher._fetch_article_content")
     @patch("ingest.rss_fetcher.feedparser")
     @patch("ingest.rss_fetcher._get_cutoff_time")
-    def test_returns_articles_within_window(self, mock_cutoff, mock_feedparser):
+    def test_returns_articles_within_window(self, mock_cutoff, mock_feedparser, mock_fetch_content):
         mock_cutoff.return_value = datetime(2026, 3, 28, 0, 0, 0, tzinfo=timezone.utc)
+        mock_fetch_content.return_value = "Full article content here"
         mock_feedparser.parse.return_value = MagicMock(
             bozo=False,
             entries=[
@@ -143,7 +210,30 @@ class TestFetchSingleFeed:
         assert articles[0]["title"] == "Recent Article"
         assert articles[0]["category"] == "Tech"
         assert articles[0]["source"] == "example.com"
+        assert articles[0]["content"] == "Full article content here"
+        assert articles[0]["summary"] == "Summary here"
         assert error is None
+
+    @patch("ingest.rss_fetcher._fetch_article_content")
+    @patch("ingest.rss_fetcher.feedparser")
+    @patch("ingest.rss_fetcher._get_cutoff_time")
+    def test_falls_back_to_summary_when_content_fetch_fails(self, mock_cutoff, mock_feedparser, mock_fetch_content):
+        mock_cutoff.return_value = datetime(2026, 3, 28, 0, 0, 0, tzinfo=timezone.utc)
+        mock_fetch_content.return_value = None  # Content fetch fails
+        mock_feedparser.parse.return_value = MagicMock(
+            bozo=False,
+            entries=[
+                {
+                    "title": "Article",
+                    "summary": "RSS summary fallback",
+                    "link": "https://example.com/article",
+                    "published_parsed": time.struct_time((2026, 3, 28, 12, 0, 0, 0, 0, 0)),
+                },
+            ],
+        )
+        articles, error = _fetch_single_feed("https://example.com/feed", "Tech")
+        assert len(articles) == 1
+        assert articles[0]["content"] == "RSS summary fallback"  # Falls back to summary
 
     @patch("ingest.rss_fetcher.feedparser")
     def test_returns_error_for_failed_feed(self, mock_feedparser):

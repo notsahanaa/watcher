@@ -60,12 +60,12 @@ def main():
             print(f"- {article['title']}")
             print(f"  Source: {article['source']} | {article['published']}")
             print(f"  Link: {article['link']}")
-            if article.get("summary"):
-                # Truncate long summaries
-                summary_text = article["summary"][:200]
-                if len(article["summary"]) > 200:
-                    summary_text += "..."
-                print(f"  {summary_text}")
+            if article.get("content"):
+                # Show content (truncated for display)
+                content_preview = article["content"][:300]
+                if len(article["content"]) > 300:
+                    content_preview += "..."
+                print(f"  {content_preview}")
             print()
 
     # Stage 2: Synthesize (TODO)

@@ -12,8 +12,12 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import feedparser
+import trafilatura
 
 import config
+
+# Content settings
+MAX_CONTENT_WORDS = 500  # Truncate article content to this many words
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +25,39 @@ logger = logging.getLogger(__name__)
 def _extract_source(feed_url: str) -> str:
     """Extract domain from feed URL for source attribution."""
     return urlparse(feed_url).netloc
+
+
+def _truncate_to_words(text: str, max_words: int) -> str:
+    """Truncate text to a maximum number of words."""
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    return " ".join(words[:max_words]) + "..."
+
+
+def _fetch_article_content(url: str) -> Optional[str]:
+    """
+    Fetch and extract article text from URL using trafilatura.
+
+    Returns:
+        Extracted article text (truncated to MAX_CONTENT_WORDS), or None if failed.
+    """
+    try:
+        downloaded = trafilatura.fetch_url(url)
+        if not downloaded:
+            logger.debug(f"Failed to download article: {url}")
+            return None
+
+        content = trafilatura.extract(downloaded)
+        if not content:
+            logger.debug(f"Failed to extract content from: {url}")
+            return None
+
+        return _truncate_to_words(content, MAX_CONTENT_WORDS)
+
+    except Exception as e:
+        logger.debug(f"Error fetching article content from {url}: {e}")
+        return None
 
 
 def _get_cutoff_time() -> datetime:
@@ -99,9 +136,14 @@ def _fetch_single_feed(feed_url: str, category: str) -> tuple[list[dict], Option
 
             entry_date = _parse_entry_date(entry)
 
+            # Fetch full article content
+            content = _fetch_article_content(link)
+            rss_summary = entry.get("summary", "").strip()
+
             articles.append({
                 "title": title,
-                "summary": entry.get("summary", "").strip(),
+                "content": content if content else rss_summary,  # Fallback to RSS summary
+                "summary": rss_summary,  # Keep original RSS summary
                 "link": link,
                 "source": source,
                 "category": category,

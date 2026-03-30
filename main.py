@@ -10,10 +10,12 @@ Usage:
     python main.py
 """
 
-import logging
 import json
+import logging
 
 from ingest import fetch_feeds
+from synthesize import synthesize
+from deliver import deliver_to_slack
 
 # Configure logging
 logging.basicConfig(
@@ -61,22 +63,86 @@ def main():
             print(f"  Source: {article['source']} | {article['published']}")
             print(f"  Link: {article['link']}")
             if article.get("content"):
-                # Show content (truncated for display)
-                content_preview = article["content"][:300]
-                if len(article["content"]) > 300:
-                    content_preview += "..."
-                print(f"  {content_preview}")
+                # Show full content for testing
+                word_count = len(article["content"].split())
+                print(f"  [Content: {word_count} words]")
+                print(f"  {article['content']}")
+                print()
             print()
 
-    # Stage 2: Synthesize (TODO)
-    logger.info("Stage 2: Synthesize - Not yet implemented")
+    # Stage 2: Synthesize
+    logger.info("Stage 2: Synthesizing with Claude...")
+    digest, synth_error = synthesize(articles)
 
-    # Stage 3: Deliver (TODO)
-    logger.info("Stage 3: Deliver - Not yet implemented")
+    if synth_error:
+        logger.error(f"Synthesis failed: {synth_error}")
+        print(f"\nSynthesis Error: {synth_error}")
+    elif digest:
+        print("\n" + "=" * 60)
+        print("WATCHER DIGEST - SYNTHESIZED")
+        print("=" * 60)
+
+        # Top Highlights
+        if digest.get("top_highlights"):
+            print("\n## TOP HIGHLIGHTS\n")
+            for i, highlight in enumerate(digest["top_highlights"], 1):
+                print(f"{i}. {highlight['insight']}")
+                print(f"   Source: {highlight.get('source', 'N/A')} | {highlight.get('link', '')}")
+                print()
+
+        # Themes
+        if digest.get("themes"):
+            print("\n## THEMES\n")
+            for theme in digest["themes"]:
+                subthemes = ", ".join(theme.get("subthemes", []))
+                print(f"### {theme['name']}")
+                if subthemes:
+                    print(f"    Subthemes: {subthemes}")
+                for article in theme.get("articles", []):
+                    print(f"    - {article['title']}")
+                    print(f"      {article.get('summary', '')}")
+                    if article.get("use_case"):
+                        print(f"      Use case: {article['use_case']}")
+                    print()
+
+        # Tools
+        tools = digest.get("tools", {})
+        if tools.get("new"):
+            print("\n## NEW TOOLS\n")
+            for tool in tools["new"]:
+                print(f"- **{tool['name']}**: {tool['description']}")
+                print(f"  Why notable: {tool.get('why_notable', 'N/A')}")
+                print(f"  Link: {tool.get('link', 'N/A')}")
+                print()
+
+        if tools.get("updates"):
+            print("\n## TOOL UPDATES\n")
+            for tool in tools["updates"]:
+                print(f"- **{tool['name']}**: {tool['update']}")
+                print(f"  Why notable: {tool.get('why_notable', 'N/A')}")
+                print(f"  Link: {tool.get('link', 'N/A')}")
+                print()
+
+        # Skipped
+        if digest.get("skipped_count", 0) > 0:
+            print(f"\n[Skipped {digest['skipped_count']} articles: {', '.join(digest.get('skipped_reasons', []))}]")
+
+    # Stage 3: Deliver
+    if digest:
+        logger.info("Stage 3: Delivering to Slack...")
+        success, error = deliver_to_slack(digest, summary)
+        if success:
+            logger.info("Delivered to Slack")
+        elif error:
+            logger.warning(f"Slack delivery failed: {error}")
+        else:
+            logger.info("Slack delivery skipped (no webhook configured)")
+    else:
+        logger.info("Stage 3: No digest to deliver")
 
     logger.info("Watcher digest complete.")
 
-    return articles, summary
+    return articles, summary, digest if digest else None
 
 
 if __name__ == "__main__":

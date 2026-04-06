@@ -1219,3 +1219,344 @@ Stage 1 is complete when:
 2. `python main.py` runs without error
 3. Adding real feeds to `config.py` fetches and displays articles
 4. Articles are deduped, filtered by time, and grouped by category
+
+---
+
+# Distributing Watcher to Others
+
+We have two paths to make Watcher available to users: one for technical users who want to integrate it into their AI workflows, and one for non-technical users who just want daily digests in Slack.
+
+---
+
+## Plan A: MCP Server (For Technical Users)
+
+### What It Is
+
+MCP (Model Context Protocol) lets AI assistants like Claude connect to external tools. We build an MCP server that wraps Watcher, so users can add it to their Claude Desktop or Claude Code setup and ask their AI to fetch news digests on demand.
+
+### How Users Would Use It
+
+1. Install our package: `pip install watcher-mcp`
+2. Add a few lines to their Claude config file
+3. Provide their own Anthropic API key
+4. Ask Claude: "Get me today's AI news digest"
+
+### What We Build
+
+A thin wrapper around our existing code that exposes four capabilities:
+- **Fetch news** - Get articles from the last N hours, optionally filtered by category
+- **Generate digest** - Create a synthesized summary of recent news
+- **List categories** - Show what feed categories are available
+- **List personas** - Show what synthesis styles are available
+
+### Why This Approach
+
+- Users bring their own API key, so we have zero operating costs
+- Works with Claude Desktop, Claude Code, Cursor, and other MCP-compatible tools
+- Can ship in 2-3 days
+- Good way to build community and get early feedback
+
+### Limitations
+
+- Only works in the Claude/MCP ecosystem (won't work with OpenAI, LangChain, etc.)
+- Harder to monetize since it's an installable package
+- Users need to be somewhat technical to set it up
+
+---
+
+## Plan B: Hosted Slack Service (For Non-Technical Users)
+
+### What It Is
+
+A web service where users sign up, connect their Slack, pick their preferences, and automatically get daily digests delivered. No technical setup required.
+
+### How Users Would Use It
+
+1. Visit our website and sign up with email
+2. Paste in their Slack webhook URL (we provide simple instructions)
+3. Check the boxes for which news categories they care about
+4. Pick a persona that matches how they want news framed
+5. Choose what time they want their daily digest
+6. Done - they get a digest in Slack every day at their chosen time
+
+### What We Build
+
+Three pieces:
+1. **Simple website** - Landing page explaining Watcher, login, and a configuration form
+2. **Database** - Stores user preferences (which categories, which persona, what time)
+3. **Scheduler** - Runs hourly, checks who needs a digest now, generates and delivers it
+
+We use Supabase for the database and auth (free tier is generous), and GitHub Actions to run the scheduler (also free).
+
+### Why This Approach
+
+- Reaches non-technical users who would never install a package
+- Natural subscription business: we can charge $9-15/month
+- We control the entire experience
+- Can expand later to web dashboard, mobile app, etc.
+
+### Limitations
+
+- We pay for Claude API usage (roughly $1.50 per user per month)
+- More to build and maintain
+- Takes about a week to get the MVP working
+
+---
+
+## Monetization Comparison
+
+### MCP Server (Plan A)
+- Hard to charge for an open source package
+- Could offer premium feed bundles for a one-time fee
+- Best approach: give it away free to build adoption
+
+### Hosted Service (Plan B)
+- Natural subscription model: free tier (limited) + paid tier ($9/mo)
+- At $9/month with $1.50 in costs, that's healthy margin
+- Can add team plans later ($29/mo)
+
+---
+
+## What to Build First
+
+**If we want speed and feedback:** Build the MCP server first. It's faster (2-3 days), costs nothing to run, and lets us validate the product with power users.
+
+**If we want revenue sooner:** Build the hosted service first. It takes longer (1 week) but has a clearer path to charging money.
+
+**If we're ambitious:** Build both. The core Watcher code stays the same - we're just adding two different wrappers. Technical users get MCP, everyone else gets the hosted service.
+
+---
+
+## Next Steps
+
+1. Decide which to build first (or both)
+2. For MCP: Create the server wrapper, publish to PyPI, write setup docs
+3. For Hosted: Set up Supabase, build the scheduler, create the simple web UI
+
+---
+
+# Chat About Info
+
+Enable two-way Slack communication where users can ask questions about stored articles at any time.
+
+## Capabilities
+
+| Feature | Example | How It Works |
+|---------|---------|--------------|
+| **Basic Q&A** | "what's the deal with OpenClaw?" | Search articles → Claude answers |
+| **Historical queries** | "all Claude updates this month" | Search across 30 days of articles |
+| **Reasoning/comparison** | "compare Cursor vs Claude Code" | Find relevant articles → Claude analyzes |
+| **Deep dive** | "deep dive on the Linear article" | Fetch full article → detailed summary |
+| **Today's digest** | "summarize today's themes" | Return stored digest |
+
+---
+
+## Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│   main.py       │     │  chat_server.py │
+│  (digest mode)  │     │  (chat mode)    │
+└────────┬────────┘     └────────┬────────┘
+         │                       │
+         │  saves                │  reads
+         ▼                       ▼
+    ┌─────────────────────────────────┐
+    │     data/articles.json          │
+    │  (accumulated articles + digest)│
+    └─────────────────────────────────┘
+                    │
+                    │  context
+                    ▼
+              ┌───────────┐
+              │  Claude   │
+              │   API     │
+              └───────────┘
+```
+
+---
+
+## New File Structure
+
+```
+watcher/
+├── main.py                    # Modify: save articles after fetching
+├── chat_server.py             # NEW: entry point for chat bot
+├── config.py                  # Modify: add storage/chat settings
+│
+├── storage/                   # NEW MODULE
+│   ├── __init__.py
+│   └── article_store.py       # JSON storage with accumulation
+│
+├── chat/                      # NEW MODULE
+│   ├── __init__.py
+│   ├── slack_bot.py           # Socket Mode event handlers
+│   └── qa_handler.py          # Q&A + deep dive logic
+│
+├── data/                      # NEW (created at runtime)
+│   └── articles.json          # Accumulated articles + latest digest
+│
+└── tests/
+    ├── test_article_store.py  # NEW
+    └── test_qa_handler.py     # NEW
+```
+
+---
+
+## Implementation Steps
+
+### Step 1: Create Storage Module (with Accumulation)
+
+**Files:** `storage/__init__.py`, `storage/article_store.py`
+
+- [ ] Create `storage/` directory
+- [ ] Implement `ArticleStore` class:
+  - `add_articles(articles, digest)` - append new articles (don't overwrite)
+  - `get_articles(days=None)` - filter by age
+  - `get_digest()` - latest digest
+  - `search(query, days=None)` - keyword search
+  - `cleanup_old()` - remove articles older than retention period
+- [ ] Write tests for storage
+- [ ] Commit
+
+**Storage schema:**
+```json
+{
+  "last_updated": "2025-01-15T10:00:00Z",
+  "latest_digest": { /* most recent synthesis */ },
+  "articles": [
+    {
+      "id": "abc123",
+      "title": "Article Title",
+      "content": "Truncated content (500 words)...",
+      "link": "https://...",
+      "source": "every.to",
+      "category": "AI Tools",
+      "published": "2025-01-15T08:00:00Z",
+      "fetched": "2025-01-15T10:00:00Z"
+    }
+  ]
+}
+```
+
+### Step 2: Modify main.py to Save Articles
+
+**File:** `main.py`
+
+- [ ] Import `ArticleStore`
+- [ ] After synthesis, call `store.add_articles(articles, digest)`
+- [ ] Call `store.cleanup_old()` to remove stale articles
+- [ ] Commit
+
+### Step 3: Create Q&A Handler (with Deep Dive)
+
+**File:** `chat/qa_handler.py`
+
+- [ ] Create `chat/` directory
+- [ ] Implement `QAHandler` class:
+  - `handle(message)` - routes to appropriate method
+  - `answer_question(question)` - search + Claude
+  - `deep_dive(article_identifier)` - fetch full article + Claude
+  - `get_history(topic, days)` - historical search
+  - `summarize_digest()` - today's digest
+  - `_fetch_full_article(url)` - uses trafilatura
+- [ ] Write tests with mocked Claude
+- [ ] Commit
+
+### Step 4: Create Slack Bot
+
+**File:** `chat/slack_bot.py`
+
+- [ ] Install `slack-bolt`: add to requirements.txt
+- [ ] Implement Socket Mode handlers:
+  - `@app.event("app_mention")` - handle @watcher mentions
+  - `@app.event("message")` - handle DMs
+- [ ] Add "Thinking..." indicator while processing
+- [ ] Commit
+
+### Step 5: Create Chat Server Entry Point
+
+**File:** `chat_server.py`
+
+- [ ] Create entry point that calls `start_bot()`
+- [ ] Add logging configuration
+- [ ] Commit
+
+### Step 6: Update Config
+
+**File:** `config.py`
+
+- [ ] Add `STORAGE_PATH = "data/articles.json"`
+- [ ] Add `RETENTION_DAYS = 30`
+- [ ] Add `CHAT_MODEL`, `MAX_CONTEXT_ARTICLES`, `MAX_CONTEXT_CHARS`
+- [ ] Commit
+
+### Step 7: Update Environment
+
+**Files:** `.env.example`, `requirements.txt`
+
+- [ ] Add `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` to `.env.example`
+- [ ] Add `slack-bolt>=1.18.0` to requirements.txt
+- [ ] Commit
+
+---
+
+## Slack App Setup (Manual)
+
+1. **Create app** at https://api.slack.com/apps
+2. **Enable Socket Mode** → generate App-Level Token (`xapp-...`)
+3. **Add Bot Token Scopes:**
+   - `app_mentions:read` - receive @watcher mentions
+   - `chat:write` - send messages
+   - `channels:history` - read channel context
+   - `im:history` - read DM context
+4. **Subscribe to events:** `app_mention`, `message.im`
+5. **Install to workspace** → get Bot Token (`xoxb-...`)
+
+---
+
+## Usage
+
+```bash
+# Run digest (fetches articles, saves to storage, posts to Slack)
+python main.py
+
+# Start chat server (runs continuously)
+python chat_server.py
+```
+
+**In Slack:**
+```
+@watcher what's the deal with OpenClaw?
+→ Answers using relevant stored articles
+
+@watcher deep dive on the Linear article
+→ Fetches full article, provides detailed analysis
+
+@watcher all Claude updates from the past 2 weeks
+→ Searches historical articles, summarizes timeline
+
+@watcher compare Cursor vs Claude Code based on recent coverage
+→ Finds articles about both, Claude reasons through comparison
+```
+
+---
+
+## Verification
+
+- [ ] Run `python main.py` twice → check `data/articles.json` accumulates
+- [ ] Run `python chat_server.py` → verify "Starting Watcher bot" logged
+- [ ] `@watcher hello` → greeting response
+- [ ] `@watcher [question about article]` → answer with sources
+- [ ] `@watcher deep dive on [title]` → detailed analysis
+- [ ] `pytest tests/test_article_store.py tests/test_qa_handler.py` → all pass
+
+---
+
+## Future Enhancements (Not in Scope)
+
+- Vector embeddings for better search relevance
+- Conversation memory (multi-turn threads)
+- Slash commands (`/watcher digest`)
+- Scheduled automatic digests
+- Cloud deployment (Railway/Fly.io)

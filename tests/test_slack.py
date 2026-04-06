@@ -15,20 +15,19 @@ def sample_digest():
         "top_highlights": [
             {
                 "insight": "Claude 4 achieves breakthrough performance",
-                "source": "techcrunch.com",
-                "link": "https://techcrunch.com/article"
+                "sources": [
+                    {"name": "TechCrunch", "link": "https://techcrunch.com/article"},
+                    {"name": "The Verge", "link": "https://theverge.com/article"}
+                ]
             }
         ],
         "themes": [
             {
-                "name": "AI Developments",
-                "subthemes": ["LLMs", "Agents"],
-                "articles": [
-                    {
-                        "title": "New AI Framework Released",
-                        "summary": "A new framework for building AI applications",
-                        "link": "https://example.com/article"
-                    }
+                "takeaway": "AI frameworks are becoming easier to use",
+                "synthesis": "A new wave of AI frameworks is making it easier than ever to build AI applications. These tools abstract away complexity while maintaining flexibility (TechCrunch, Example).",
+                "sources": [
+                    {"name": "TechCrunch", "link": "https://techcrunch.com/article"},
+                    {"name": "Example", "link": "https://example.com/article"}
                 ]
             }
         ],
@@ -36,20 +35,30 @@ def sample_digest():
             "new": [
                 {
                     "name": "SuperTool",
-                    "description": "Does amazing things",
+                    "summary": "Does amazing things",
+                    "comparison": "Faster than OldTool and easier to configure",
+                    "why_it_matters": "Saves hours of manual work",
                     "link": "https://supertool.com"
                 }
             ],
             "updates": [
                 {
                     "name": "ExistingTool",
-                    "update": "Now supports Python 4",
+                    "summary": "Now supports Python 4",
+                    "comparison": "First in the category to support Python 4",
+                    "why_it_matters": "You can now use the latest Python features",
                     "link": "https://existingtool.com"
                 }
             ]
         },
-        "skipped_count": 2,
-        "skipped_reasons": ["duplicate", "irrelevant"]
+        "case_studies": [
+            {
+                "what_they_built": "AI-powered code reviewer",
+                "how_it_works": "Uses GPT-4 to analyze PRs",
+                "takeaway": "Start with a narrow use case",
+                "link": "https://example.com/case-study"
+            }
+        ]
     }
 
 
@@ -93,8 +102,8 @@ class TestFormatDigestForSlack:
         result = format_digest_for_slack(sample_digest, sample_summary)
         blocks_text = str(result["blocks"])
         assert "THEMES" in blocks_text
-        assert "AI Developments" in blocks_text
-        assert "LLMs, Agents" in blocks_text
+        assert "AI frameworks are becoming easier to use" in blocks_text
+        assert "new wave of AI frameworks" in blocks_text
 
     def test_includes_tools(self, sample_digest, sample_summary):
         """Should include tools sections."""
@@ -105,13 +114,28 @@ class TestFormatDigestForSlack:
         assert "TOOL UPDATES" in blocks_text
         assert "ExistingTool" in blocks_text
 
+    def test_includes_tool_comparisons(self, sample_digest, sample_summary):
+        """Should include tool comparisons when present."""
+        result = format_digest_for_slack(sample_digest, sample_summary)
+        blocks_text = str(result["blocks"])
+        assert "vs alternatives:" in blocks_text
+        assert "Faster than OldTool" in blocks_text
+        assert "First in the category to support Python 4" in blocks_text
+
     def test_includes_footer_stats(self, sample_digest, sample_summary):
         """Should include footer with statistics."""
         result = format_digest_for_slack(sample_digest, sample_summary)
         blocks_text = str(result["blocks"])
         assert "8 feeds fetched" in blocks_text
         assert "45 articles processed" in blocks_text
-        assert "2 skipped" in blocks_text
+
+    def test_includes_case_studies(self, sample_digest, sample_summary):
+        """Should include case studies section."""
+        result = format_digest_for_slack(sample_digest, sample_summary)
+        blocks_text = str(result["blocks"])
+        assert "CASE STUDIES" in blocks_text
+        assert "AI-powered code reviewer" in blocks_text
+        assert "Start with a narrow use case" in blocks_text
 
     def test_handles_empty_sections(self, sample_summary):
         """Should handle digest with empty sections."""
@@ -119,7 +143,7 @@ class TestFormatDigestForSlack:
             "top_highlights": [],
             "themes": [],
             "tools": {"new": [], "updates": []},
-            "skipped_count": 0
+            "case_studies": []
         }
         result = format_digest_for_slack(empty_digest, sample_summary)
         assert "blocks" in result
@@ -130,15 +154,16 @@ class TestFormatDigestForSlack:
         """Should handle items without links."""
         digest = {
             "top_highlights": [
-                {"insight": "No link here", "source": "unknown"}
+                {"insight": "No link here", "sources": [{"name": "unknown"}]}
             ],
             "themes": [],
-            "tools": {"new": [], "updates": []}
+            "tools": {"new": [], "updates": []},
+            "case_studies": []
         }
         result = format_digest_for_slack(digest, sample_summary)
         blocks_text = str(result["blocks"])
         assert "No link here" in blocks_text
-        assert "(unknown)" in blocks_text
+        assert "unknown" in blocks_text
 
 
 class TestDeliverToSlack:

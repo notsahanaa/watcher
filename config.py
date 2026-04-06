@@ -6,7 +6,7 @@ Adjust LOOKBACK_HOURS for testing (default: 24 hours).
 """
 
 # Time settings
-LOOKBACK_HOURS = 24  # How far back to fetch articles
+LOOKBACK_HOURS = 360  # How far back to fetch articles (15 days for testing)
 
 # RSS feeds organized by category
 # Add your feeds here - the category names will appear in the digest
@@ -22,8 +22,17 @@ FEEDS = {
     ],
 }
 
-# Persona for Claude prompts (used in Stage 2)
-PERSONA = """
-You are summarizing news for a [role] who cares about [topics].
-Focus on [priorities].
-"""
+# Persona templates
+AI_BUILDER_PERSONA = {
+    "name": "AI Builder",
+    "description": "Someone building AI-powered products and tools",
+    "sections": ["top_highlights", "themes", "tools", "case_studies"],
+    "skip": ["funding announcements", "executive hiring", "ethics debates", "policy/regulation"],
+    "framing": "Focus on practical applications, implementation details, and what builders can learn or use"
+}
+
+# Active persona (set to template or custom)
+ACTIVE_PERSONA = AI_BUILDER_PERSONA
+
+# For custom personas, categories are saved here after first-run setup
+CUSTOM_PERSONA_CATEGORIES = None  # Set after user confirms

@@ -18,8 +18,9 @@ class TestBuildPrompt:
                      "published": "2026-03-29", "link": "https://test.com/1",
                      "content": "Article content"}]
         prompt = _build_prompt(articles)
-        # Should include something from the persona
-        assert "AI Builder" in prompt or "PERSONA" in prompt or "digest" in prompt.lower()
+        # Should include persona name and focus
+        assert "AI Builder" in prompt
+        assert "practical applications" in prompt.lower() or "implementation details" in prompt.lower()
 
     def test_includes_all_articles(self):
         articles = [
@@ -69,22 +70,36 @@ class TestParseResponse:
     def test_handles_complex_json(self):
         content = json.dumps({
             "top_highlights": [
-                {"insight": "Key insight here", "source": "test.com", "link": "https://test.com/1"}
+                {
+                    "insight": "Key insight here",
+                    "sources": [{"name": "test.com", "link": "https://test.com/1"}]
+                }
             ],
             "themes": [
-                {"name": "AI Tools", "subthemes": ["LLMs", "Agents"], "articles": []}
+                {
+                    "takeaway": "The cost/performance war is heating up",
+                    "synthesis": "A synthesized paragraph about AI tools.",
+                    "sources": [{"name": "Source 1", "link": "url1"}]
+                }
             ],
             "tools": {
-                "new": [{"name": "NewTool", "description": "Does things", "why_notable": "Important", "link": "url"}],
+                "new": [{"name": "NewTool", "description": "Does things", "why_it_matters": "Important", "link": "url"}],
                 "updates": []
             },
-            "skipped_count": 2,
-            "skipped_reasons": ["Funding news"]
+            "case_studies": [
+                {
+                    "what_they_built": "AI chatbot",
+                    "how_it_works": "Using GPT-4",
+                    "takeaway": "Start simple",
+                    "link": "url"
+                }
+            ]
         })
         result = _parse_response(content)
         assert result is not None
         assert len(result["top_highlights"]) == 1
-        assert result["themes"][0]["name"] == "AI Tools"
+        assert result["themes"][0]["takeaway"] == "The cost/performance war is heating up"
+        assert len(result["case_studies"]) == 1
 
 
 class TestSynthesize:
@@ -113,8 +128,7 @@ class TestSynthesize:
             "top_highlights": [],
             "themes": [],
             "tools": {"new": [], "updates": []},
-            "skipped_count": 0,
-            "skipped_reasons": []
+            "case_studies": []
         }))]
         mock_client.messages.create.return_value = mock_response
 
@@ -138,18 +152,24 @@ class TestSynthesize:
 
         expected_digest = {
             "top_highlights": [
-                {"insight": "Important finding", "source": "ai.com", "link": "https://ai.com/1"}
+                {
+                    "insight": "Important finding",
+                    "sources": [{"name": "ai.com", "link": "https://ai.com/1"}]
+                }
             ],
             "themes": [
-                {"name": "AI Agents", "subthemes": ["Automation"], "articles": []}
+                {
+                    "takeaway": "AI agents are becoming more accessible",
+                    "synthesis": "A synthesized paragraph about AI agents and automation.",
+                    "sources": [{"name": "AI News", "link": "https://ai.com/1"}]
+                }
             ],
             "tools": {
                 "new": [{"name": "AgentKit", "description": "Build agents",
-                         "why_notable": "Easy to use", "link": "https://agentkit.com"}],
+                         "why_it_matters": "Easy to use", "link": "https://agentkit.com"}],
                 "updates": []
             },
-            "skipped_count": 1,
-            "skipped_reasons": ["Funding announcement"]
+            "case_studies": []
         }
 
         mock_response = MagicMock()

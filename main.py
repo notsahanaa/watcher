@@ -87,45 +87,55 @@ def main():
             print("\n## TOP HIGHLIGHTS\n")
             for i, highlight in enumerate(digest["top_highlights"], 1):
                 print(f"{i}. {highlight['insight']}")
-                print(f"   Source: {highlight.get('source', 'N/A')} | {highlight.get('link', '')}")
+                sources = highlight.get("sources", [])
+                if sources:
+                    source_names = ", ".join(s.get("name", "") for s in sources)
+                    print(f"   Sources: {source_names}")
                 print()
 
         # Themes
         if digest.get("themes"):
             print("\n## THEMES\n")
             for theme in digest["themes"]:
-                subthemes = ", ".join(theme.get("subthemes", []))
-                print(f"### {theme['name']}")
-                if subthemes:
-                    print(f"    Subthemes: {subthemes}")
-                for article in theme.get("articles", []):
-                    print(f"    - {article['title']}")
-                    print(f"      {article.get('summary', '')}")
-                    if article.get("use_case"):
-                        print(f"      Use case: {article['use_case']}")
-                    print()
+                print(f"### {theme.get('takeaway', 'Untitled')}")
+                synthesis = theme.get("synthesis", "")
+                if synthesis:
+                    print(f"    {synthesis}")
+                sources = theme.get("sources", [])
+                if sources:
+                    source_names = ", ".join(s.get("name", "") for s in sources)
+                    print(f"    Sources: {source_names}")
+                print()
 
         # Tools
         tools = digest.get("tools", {})
         if tools.get("new"):
             print("\n## NEW TOOLS\n")
             for tool in tools["new"]:
-                print(f"- **{tool['name']}**: {tool['description']}")
-                print(f"  Why notable: {tool.get('why_notable', 'N/A')}")
+                print(f"- **{tool.get('name', 'Unknown')}**: {tool.get('description', 'N/A')}")
+                print(f"  Why it matters: {tool.get('why_it_matters', 'N/A')}")
                 print(f"  Link: {tool.get('link', 'N/A')}")
                 print()
 
         if tools.get("updates"):
             print("\n## TOOL UPDATES\n")
             for tool in tools["updates"]:
-                print(f"- **{tool['name']}**: {tool['update']}")
-                print(f"  Why notable: {tool.get('why_notable', 'N/A')}")
+                print(f"- **{tool.get('name', 'Unknown')}**: {tool.get('update', 'N/A')}")
+                print(f"  Why it matters: {tool.get('why_it_matters', 'N/A')}")
                 print(f"  Link: {tool.get('link', 'N/A')}")
                 print()
 
-        # Skipped
-        if digest.get("skipped_count", 0) > 0:
-            print(f"\n[Skipped {digest['skipped_count']} articles: {', '.join(digest.get('skipped_reasons', []))}]")
+        # Case Studies
+        if digest.get("case_studies"):
+            print("\n## CASE STUDIES\n")
+            for case in digest["case_studies"]:
+                print(f"- **{case.get('what_they_built', 'Untitled')}**")
+                if case.get("how_it_works"):
+                    print(f"  How it works: {case['how_it_works']}")
+                if case.get("takeaway"):
+                    print(f"  Takeaway: {case['takeaway']}")
+                print(f"  Link: {case.get('link', 'N/A')}")
+                print()
 
     # Stage 3: Deliver
     if digest:

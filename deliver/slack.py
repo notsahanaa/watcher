@@ -46,13 +46,17 @@ def format_digest_for_slack(digest: dict, summary: dict) -> dict:
             "text": {"type": "mrkdwn", "text": "*TOP HIGHLIGHTS*"}
         })
         for highlight in digest["top_highlights"]:
-            source = highlight.get("source", "")
-            link = highlight.get("link", "")
             insight = highlight.get("insight", "")
-            if link:
-                text = f"• {insight} (<{link}|{source}>)"
+            sources = highlight.get("sources", [])
+            # Build inline source links
+            if sources:
+                source_links = ", ".join(
+                    f"<{s['link']}|{s['name']}>" if s.get("link") else s.get("name", "")
+                    for s in sources
+                )
+                text = f"• {insight} ({source_links})"
             else:
-                text = f"• {insight} ({source})"
+                text = f"• {insight}"
             blocks.append({
                 "type": "section",
                 "text": {"type": "mrkdwn", "text": text}
@@ -66,25 +70,29 @@ def format_digest_for_slack(digest: dict, summary: dict) -> dict:
             "text": {"type": "mrkdwn", "text": "*THEMES*"}
         })
         for theme in digest["themes"]:
-            subthemes = ", ".join(theme.get("subthemes", []))
-            theme_text = f"*{theme['name']}*"
-            if subthemes:
-                theme_text += f" - {subthemes}"
+            # Takeaway as the header (insight, not category)
+            takeaway = theme.get("takeaway", "")
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": theme_text}
+                "text": {"type": "mrkdwn", "text": f"*{takeaway}*"}
             })
-            for article in theme.get("articles", []):
-                title = article.get("title", "")
-                article_summary = article.get("summary", "")
-                link = article.get("link", "")
-                if link:
-                    article_text = f"  • {title} - {article_summary} (<{link}|Read more>)"
-                else:
-                    article_text = f"  • {title} - {article_summary}"
+            # Synthesized paragraph
+            synthesis = theme.get("synthesis", "")
+            if synthesis:
                 blocks.append({
                     "type": "section",
-                    "text": {"type": "mrkdwn", "text": article_text}
+                    "text": {"type": "mrkdwn", "text": synthesis}
+                })
+            # Source links
+            sources = theme.get("sources", [])
+            if sources:
+                source_links = " | ".join(
+                    f"<{s['link']}|{s['name']}>" if s.get("link") else s.get("name", "")
+                    for s in sources
+                )
+                blocks.append({
+                    "type": "context",
+                    "elements": [{"type": "mrkdwn", "text": f"Sources: {source_links}"}]
                 })
         blocks.append({"type": "divider"})
 
@@ -97,15 +105,23 @@ def format_digest_for_slack(digest: dict, summary: dict) -> dict:
         })
         for tool in tools["new"]:
             name = tool.get("name", "")
-            description = tool.get("description", "")
+            tool_summary = tool.get("summary", tool.get("description", ""))  # fallback to description
+            comparison = tool.get("comparison", "")
+            why_it_matters = tool.get("why_it_matters", "")
             link = tool.get("link", "")
+            # Build tool text with summary, comparison, and why it matters
+            tool_text = f"• *{name}*"
+            if tool_summary:
+                tool_text += f" - {tool_summary}"
+            if comparison:
+                tool_text += f"\n  _vs alternatives: {comparison}_"
+            if why_it_matters:
+                tool_text += f"\n  _Why it matters: {why_it_matters}_"
             if link:
-                text = f"• *{name}* - {description} (<{link}|Link>)"
-            else:
-                text = f"• *{name}* - {description}"
+                tool_text += f" (<{link}|Link>)"
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": text}
+                "text": {"type": "mrkdwn", "text": tool_text}
             })
 
     if tools.get("updates"):
@@ -115,15 +131,48 @@ def format_digest_for_slack(digest: dict, summary: dict) -> dict:
         })
         for tool in tools["updates"]:
             name = tool.get("name", "")
-            update = tool.get("update", "")
+            tool_summary = tool.get("summary", tool.get("update", ""))  # fallback to update
+            comparison = tool.get("comparison", "")
+            why_it_matters = tool.get("why_it_matters", "")
             link = tool.get("link", "")
+            # Build tool text with summary, comparison, and why it matters
+            tool_text = f"• *{name}*"
+            if tool_summary:
+                tool_text += f" - {tool_summary}"
+            if comparison:
+                tool_text += f"\n  _vs alternatives: {comparison}_"
+            if why_it_matters:
+                tool_text += f"\n  _Why it matters: {why_it_matters}_"
             if link:
-                text = f"• *{name}* - {update} (<{link}|Link>)"
-            else:
-                text = f"• *{name}* - {update}"
+                tool_text += f" (<{link}|Link>)"
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": text}
+                "text": {"type": "mrkdwn", "text": tool_text}
+            })
+
+    # Case Studies
+    case_studies = digest.get("case_studies", [])
+    if case_studies:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "*CASE STUDIES*"}
+        })
+        for case in case_studies:
+            what_built = case.get("what_they_built", "")
+            how_works = case.get("how_it_works", "")
+            takeaway = case.get("takeaway", "")
+            link = case.get("link", "")
+            # Build case study text
+            case_text = f"• *{what_built}*"
+            if how_works:
+                case_text += f"\n  How it works: {how_works}"
+            if takeaway:
+                case_text += f"\n  _Takeaway: {takeaway}_"
+            if link:
+                case_text += f" (<{link}|Link>)"
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": case_text}
             })
 
     # Footer with stats

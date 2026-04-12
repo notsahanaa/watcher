@@ -6,7 +6,7 @@ Adjust LOOKBACK_HOURS for testing (default: 24 hours).
 """
 
 # Time settings
-LOOKBACK_HOURS = 360  # How far back to fetch articles (15 days for testing)
+LOOKBACK_HOURS = 24  # How far back to fetch articles
 
 # RSS feeds organized by category
 # Add your feeds here - the category names will appear in the digest

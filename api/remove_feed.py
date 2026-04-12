@@ -14,10 +14,9 @@ import hmac
 import json
 import os
 import time
-from http.server import BaseHTTPRequestHandler
-from urllib.parse import parse_qs
 
 import requests
+from flask import Flask, request, jsonify
 
 
 # Environment variables (set in Vercel dashboard)
@@ -28,10 +27,10 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "")  # Format: "owner/repo"
 # GitHub API base URL
 GITHUB_API_BASE = "https://api.github.com"
 
+app = Flask(__name__)
 
-def verify_slack_signature(
-    body: bytes, timestamp: str, signature: str
-) -> bool:
+
+def verify_slack_signature(body: bytes, timestamp: str, signature: str) -> bool:
     """
     Verify that the request came from Slack using signing secret.
 
@@ -40,8 +39,15 @@ def verify_slack_signature(
     if not SLACK_SIGNING_SECRET:
         return False
 
+    # Validate timestamp exists
+    if not timestamp:
+        return False
+
     # Check timestamp to prevent replay attacks (allow 5 min window)
-    if abs(time.time() - int(timestamp)) > 60 * 5:
+    try:
+        if abs(time.time() - int(timestamp)) > 60 * 5:
+            return False
+    except ValueError:
         return False
 
     # Compute expected signature
@@ -145,75 +151,64 @@ def remove_feed(feed_url: str) -> str:
             update_feeds_on_github(feeds, sha, feed_url)
             return f"Removed feed from {category}: {feed_url}"
 
-    return f"Feed not found: {feed_url}"
+    # Feed not found - build helpful message with current feeds
+    all_feeds = []
+    for category, urls in feeds.items():
+        for url in urls:
+            all_feeds.append(f"* {url} ({category})")
+
+    if all_feeds:
+        feeds_list = "\n".join(all_feeds)
+        return f"Feed not found: {feed_url}\n\n*Currently tracked feeds:*\n{feeds_list}"
+    else:
+        return f"Feed not found: {feed_url}\n\nNo feeds are currently being tracked."
 
 
-class handler(BaseHTTPRequestHandler):
-    """Vercel serverless function handler."""
+@app.route("/api/remove_feed", methods=["POST"])
+def handle_remove_feed():
+    """Handle POST request from Slack slash command."""
+    try:
+        # Get raw body for signature verification
+        body = request.get_data()
 
-    def do_POST(self):
-        """Handle POST request from Slack slash command."""
-        try:
-            # Read request body
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length)
+        # Verify Slack signature
+        timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+        signature = request.headers.get("X-Slack-Signature", "")
 
-            # Verify Slack signature
-            timestamp = self.headers.get("X-Slack-Request-Timestamp", "")
-            signature = self.headers.get("X-Slack-Signature", "")
-
-            if not verify_slack_signature(body, timestamp, signature):
-                self.send_response(401)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": "Invalid signature"}).encode())
-                return
-
-            # Parse form data
-            form_data = parse_qs(body.decode("utf-8"))
-            command_text = form_data.get("text", [""])[0]
-
-            # Parse and remove feed
-            feed_url = parse_command(command_text)
-            message = remove_feed(feed_url)
-
-            # Determine response icon based on result
-            if message.startswith("Feed not found"):
-                icon = ":warning:"
-            else:
-                icon = ":white_check_mark:"
-
-            # Send success response to Slack
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-
-            response = {
-                "response_type": "in_channel",
-                "text": f"{icon} {message}"
-            }
-            self.wfile.write(json.dumps(response).encode())
-
-        except ValueError as e:
-            # User error (bad input)
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-
-            response = {
+        if not verify_slack_signature(body, timestamp, signature):
+            return jsonify({
                 "response_type": "ephemeral",
-                "text": f":x: Error: {str(e)}\n\nUsage: `/watcher-remove-feed <feed-url>`"
-            }
-            self.wfile.write(json.dumps(response).encode())
+                "text": "Invalid signature"
+            }), 401
 
-        except Exception as e:
-            # Server error
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
+        # Parse form data
+        command_text = request.form.get("text", "")
 
-            response = {
-                "response_type": "ephemeral",
-                "text": f":x: Something went wrong: {str(e)}"
-            }
-            self.wfile.write(json.dumps(response).encode())
+        # Parse and remove feed
+        feed_url = parse_command(command_text)
+        message = remove_feed(feed_url)
+
+        # Determine response icon based on result
+        if message.startswith("Feed not found"):
+            icon = ":warning:"
+        else:
+            icon = ":white_check_mark:"
+
+        return jsonify({
+            "response_type": "in_channel",
+            "text": f"{icon} {message}"
+        })
+
+    except ValueError as e:
+        # User error (bad input)
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": f":x: Error: {str(e)}\n\nUsage: `/watcher-remove-feed <feed-url>`"
+        })
+
+    except Exception as e:
+        # Server error
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": f":x: Something went wrong: {str(e)}"
+        })

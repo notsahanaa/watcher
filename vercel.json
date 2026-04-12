@@ -1,15 +1,15 @@
 {
   "version": 2,
   "builds": [
-    {
-      "src": "api/*.py",
-      "use": "@vercel/python"
-    }
+    { "src": "api/add_feed.py", "use": "@vercel/python" },
+    { "src": "api/remove_feed.py", "use": "@vercel/python" },
+    { "src": "api/pause.py", "use": "@vercel/python" },
+    { "src": "api/unpause.py", "use": "@vercel/python" }
   ],
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    }
+    { "src": "/api/add_feed", "dest": "/api/add_feed.py" },
+    { "src": "/api/remove_feed", "dest": "/api/remove_feed.py" },
+    { "src": "/api/pause", "dest": "/api/pause.py" },
+    { "src": "/api/unpause", "dest": "/api/unpause.py" }
   ]
 }

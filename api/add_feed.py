@@ -14,10 +14,9 @@ import hmac
 import json
 import os
 import time
-from http.server import BaseHTTPRequestHandler
-from urllib.parse import parse_qs
 
 import requests
+from flask import Flask, request, jsonify
 
 
 # Environment variables (set in Vercel dashboard)
@@ -31,10 +30,10 @@ GITHUB_API_BASE = "https://api.github.com"
 # Default category for new feeds
 DEFAULT_CATEGORY = "AI Tools"
 
+app = Flask(__name__)
 
-def verify_slack_signature(
-    body: bytes, timestamp: str, signature: str
-) -> bool:
+
+def verify_slack_signature(body: bytes, timestamp: str, signature: str) -> bool:
     """
     Verify that the request came from Slack using signing secret.
 
@@ -43,8 +42,15 @@ def verify_slack_signature(
     if not SLACK_SIGNING_SECRET:
         return False
 
+    # Validate timestamp exists
+    if not timestamp:
+        return False
+
     # Check timestamp to prevent replay attacks (allow 5 min window)
-    if abs(time.time() - int(timestamp)) > 60 * 5:
+    try:
+        if abs(time.time() - int(timestamp)) > 60 * 5:
+            return False
+    except ValueError:
         return False
 
     # Compute expected signature
@@ -162,66 +168,46 @@ def add_feed(feed_url: str, category: str) -> str:
     return f"Added feed to {category}: {feed_url}"
 
 
-class handler(BaseHTTPRequestHandler):
-    """Vercel serverless function handler."""
+@app.route("/api/add_feed", methods=["POST"])
+def handle_add_feed():
+    """Handle POST request from Slack slash command."""
+    try:
+        # Get raw body for signature verification
+        body = request.get_data()
 
-    def do_POST(self):
-        """Handle POST request from Slack slash command."""
-        try:
-            # Read request body
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length)
+        # Verify Slack signature
+        timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+        signature = request.headers.get("X-Slack-Signature", "")
 
-            # Verify Slack signature
-            timestamp = self.headers.get("X-Slack-Request-Timestamp", "")
-            signature = self.headers.get("X-Slack-Signature", "")
-
-            if not verify_slack_signature(body, timestamp, signature):
-                self.send_response(401)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": "Invalid signature"}).encode())
-                return
-
-            # Parse form data
-            form_data = parse_qs(body.decode("utf-8"))
-            command_text = form_data.get("text", [""])[0]
-
-            # Parse and add feed
-            feed_url, category = parse_command(command_text)
-            message = add_feed(feed_url, category)
-
-            # Send success response to Slack
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-
-            response = {
-                "response_type": "in_channel",
-                "text": f":white_check_mark: {message}"
-            }
-            self.wfile.write(json.dumps(response).encode())
-
-        except ValueError as e:
-            # User error (bad input)
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-
-            response = {
+        if not verify_slack_signature(body, timestamp, signature):
+            return jsonify({
                 "response_type": "ephemeral",
-                "text": f":x: Error: {str(e)}\n\nUsage: `/watcher-add <feed-url> [category]`"
-            }
-            self.wfile.write(json.dumps(response).encode())
+                "text": "Invalid signature"
+            }), 401
 
-        except Exception as e:
-            # Server error
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
+        # Parse form data
+        command_text = request.form.get("text", "")
 
-            response = {
-                "response_type": "ephemeral",
-                "text": f":x: Something went wrong: {str(e)}"
-            }
-            self.wfile.write(json.dumps(response).encode())
+        # Parse and add feed
+        feed_url, category = parse_command(command_text)
+        message = add_feed(feed_url, category)
+
+        # Send success response to Slack
+        return jsonify({
+            "response_type": "in_channel",
+            "text": f":white_check_mark: {message}"
+        })
+
+    except ValueError as e:
+        # User error (bad input)
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": f":x: Error: {str(e)}\n\nUsage: `/watcher-add <feed-url> [category]`"
+        })
+
+    except Exception as e:
+        # Server error
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": f":x: Something went wrong: {str(e)}"
+        })

@@ -5,9 +5,11 @@ Fetches articles from configured RSS feeds, filters by time window,
 dedupes by URL, and returns structured data for synthesis.
 """
 
+import json
 import logging
 from calendar import timegm
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -16,10 +18,33 @@ import trafilatura
 
 import config
 
+# Path to feeds.json (relative to project root)
+FEEDS_JSON_PATH = Path(__file__).parent.parent / "feeds.json"
+
 # Content settings
 MAX_CONTENT_WORDS = 500  # Truncate article content to this many words
 
 logger = logging.getLogger(__name__)
+
+
+def _load_feeds() -> dict:
+    """
+    Load feeds from feeds.json, falling back to config.FEEDS if not found.
+
+    Returns:
+        Dict mapping category names to lists of feed URLs.
+    """
+    if FEEDS_JSON_PATH.exists():
+        try:
+            with open(FEEDS_JSON_PATH, "r") as f:
+                feeds = json.load(f)
+                logger.debug(f"Loaded feeds from {FEEDS_JSON_PATH}")
+                return feeds
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load feeds.json: {e}, falling back to config.FEEDS")
+
+    # Fallback to config.FEEDS for backwards compatibility
+    return getattr(config, "FEEDS", {})
 
 
 def _extract_source(feed_url: str) -> str:
@@ -160,14 +185,16 @@ def _fetch_single_feed(feed_url: str, category: str) -> tuple[list[dict], Option
 
 def fetch_feeds() -> tuple[list[dict], dict]:
     """
-    Fetch all RSS feeds from config and return articles.
+    Fetch all RSS feeds and return articles.
+
+    Loads feeds from feeds.json (or config.FEEDS as fallback).
 
     Returns:
         Tuple of:
         - List of article dicts (deduped by URL)
         - Summary dict with fetch statistics
     """
-    feeds_config = getattr(config, "FEEDS", {})
+    feeds_config = _load_feeds()
 
     if not feeds_config:
         logger.warning("No feeds configured in config.FEEDS")

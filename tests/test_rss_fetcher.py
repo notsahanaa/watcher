@@ -249,10 +249,10 @@ class TestFetchSingleFeed:
 
 
 class TestFetchFeeds:
-    @patch("ingest.rss_fetcher.config")
+    @patch("ingest.rss_fetcher._load_feeds")
     @patch("ingest.rss_fetcher._fetch_single_feed")
-    def test_fetches_all_feeds_from_config(self, mock_fetch, mock_config):
-        mock_config.FEEDS = {
+    def test_fetches_all_feeds_from_config(self, mock_fetch, mock_load_feeds):
+        mock_load_feeds.return_value = {
             "AI": ["https://ai.com/feed"],
             "Tech": ["https://tech.com/feed"],
         }
@@ -269,10 +269,10 @@ class TestFetchFeeds:
         assert summary["failed"] == 0
         assert summary["articles_found"] == 2
 
-    @patch("ingest.rss_fetcher.config")
+    @patch("ingest.rss_fetcher._load_feeds")
     @patch("ingest.rss_fetcher._fetch_single_feed")
-    def test_handles_failed_feeds(self, mock_fetch, mock_config):
-        mock_config.FEEDS = {
+    def test_handles_failed_feeds(self, mock_fetch, mock_load_feeds):
+        mock_load_feeds.return_value = {
             "AI": ["https://ai.com/feed", "https://broken.com/feed"],
         }
         mock_fetch.side_effect = [
@@ -288,19 +288,19 @@ class TestFetchFeeds:
         assert summary["failed"] == 1
         assert "https://broken.com/feed" in summary["failed_feeds"]
 
-    @patch("ingest.rss_fetcher.config")
-    def test_handles_empty_config(self, mock_config):
-        mock_config.FEEDS = {}
+    @patch("ingest.rss_fetcher._load_feeds")
+    def test_handles_empty_config(self, mock_load_feeds):
+        mock_load_feeds.return_value = {}
 
         articles, summary = fetch_feeds()
 
         assert articles == []
         assert summary["total_feeds"] == 0
 
-    @patch("ingest.rss_fetcher.config")
+    @patch("ingest.rss_fetcher._load_feeds")
     @patch("ingest.rss_fetcher._fetch_single_feed")
-    def test_dedupes_across_feeds(self, mock_fetch, mock_config):
-        mock_config.FEEDS = {
+    def test_dedupes_across_feeds(self, mock_fetch, mock_load_feeds):
+        mock_load_feeds.return_value = {
             "AI": ["https://ai.com/feed"],
             "Tech": ["https://tech.com/feed"],
         }

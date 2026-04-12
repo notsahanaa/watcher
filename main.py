@@ -12,10 +12,14 @@ Usage:
 
 import json
 import logging
+from pathlib import Path
 
 from ingest import fetch_feeds
 from synthesize import synthesize
 from deliver import deliver_to_slack
+
+# Path to state file (for pause functionality)
+STATE_JSON_PATH = Path(__file__).parent / "state.json"
 
 # Configure logging
 logging.basicConfig(
@@ -25,9 +29,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _is_paused() -> bool:
+    """Check if digest is paused (reads local state.json)."""
+    if not STATE_JSON_PATH.exists():
+        return False
+    try:
+        with open(STATE_JSON_PATH, "r") as f:
+            return json.load(f).get("paused", False)
+    except (json.JSONDecodeError, IOError):
+        return False
+
+
 def main():
     """Run the Watcher digest pipeline."""
     logger.info("Starting Watcher digest...")
+
+    # Check if paused
+    if _is_paused():
+        logger.info("Watcher is paused. Skipping digest to save tokens.")
+        return [], {}, None
 
     # Stage 1: Ingest
     logger.info("Stage 1: Fetching RSS feeds...")
